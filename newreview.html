@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="description" content="">
+  <meta name="author" content="">
+
+  <title>CoCo - MAP</title>
+
+  <!-- Custom fonts for this template-->
+  <link href="vendor/fontawesome-free/css/all.min.css" rel="stylesheet" type="text/css">
+  <link href="https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i" rel="stylesheet">
+
+  <!-- Custom styles for this template-->
+  <link href="css/sb-admin-2.min.css" rel="stylesheet">
+
+  <link href="https://cdn.datatables.net/1.10.25/css/jquery.dataTables.min.css" rel="stylesheet">
+  <link href="https://cdn.datatables.net/select/1.3.3/css/select.dataTables.min.css" rel="stylesheet">
+  <link href="https://cdn.datatables.net/buttons/1.7.1/css/buttons.dataTables.min.css" rel="stylesheet">
+
+  <!-- Bootstrap core JavaScript-->
+  <script src="vendor/jquery/jquery.min.js"></script>
+  <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+
+  <!-- Core plugin JavaScript-->
+  <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
+
+  <!-- PA data JavaScript-->
+  <script src="js/paData.js"></script>
+
+   <link rel="stylesheet" href="https://js.arcgis.com/4.20/esri/themes/light/main.css" />
+   <style>
+    #viewDiv {
+       padding: 0;
+       margin: 0;
+       height: 100%;
+       width: 100%;
+     }
+     #mainWindow {
+       padding: .5em;
+       background-color: #fff;
+     }
+     #mainWindow p, #uploadForm {
+         display: block;
+         padding: .1em;
+       }
+
+   </style>
+
+<script src="https://www.gstatic.com/firebasejs/8.9.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.9.1/firebase-firestore.js"></script>
+<script>
+
+         // const firebase = require("firebase");
+          // Required for side-effects
+          //require("firebase/firestore");
+                    // Your web app's Firebase configuration
+      // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+      var firebaseConfig = {
+          apiKey: "AIzaSyB8RV5Hg46JtsXQxQxTdy3QV6s6wcobCgY",
+          authDomain: "jdi-gdh.firebaseapp.com",
+          projectId: "jdi-gdh",
+          storageBucket: "jdi-gdh.appspot.com",
+          messagingSenderId: "256074571859",
+          appId: "1:256074571859:web:52a2bdc3b1e1d22a1e26a6",
+          measurementId: "G-77EV8L3R99"
+      };
+      // Initialize Firebase
+      firebase.initializeApp(firebaseConfig);
+
+      var db = firebase.firestore();
+      async function getAllPAData() {
+
+          var features = []
+          await db.collection("PA").get().then((querySnapshot) => {
+              querySnapshot.forEach((doc) => {
+                  // doc.data() is never undefined for query doc snapshots
+                  var rings = []
+                  //console.log(doc.id, " => ", doc.data());
+                  doc.data().version[doc.data().version.length - 1].geometry.rings.map((ring) => {
+                    var indRing = []
+                    ring.i.map((vertices) => {
+                      indRing.push(vertices.i)
+                    })
+                    rings.push(indRing)
+                  })
+                  const feature = {
+                    "attributes" : doc.data().attributes,
+                    "geometry" : {
+                      "rings": rings,
+                      "spatialReference": {
+                                  "wkid": 102100,
+                                  "latestWkid": 3857
+                              }
+                    }
+                  }
+                  features.push(feature)
+              });
+              //console.log(features)
+              
+          });
+          
+          return features;
+      }
+
+      async function getSelectedPAData(SUBSPECIES) {
+        var features = []
+        await db.collection("PA").doc(SUBSPECIES).get().then((doc) => {
+            if (doc.exists) {
+                var rings = []
+                  console.log(doc.id, " => ", doc.data());
+                  doc.data().version[doc.data().version.length - 1].geometry.rings.map((ring) => {
+                    var indRing = []
+                    ring.i.map((vertices) => {
+                      indRing.push(vertices.i)
+                    })
+                    rings.push(indRing)
+                  })
+                  const feature = {
+                    "attributes" : doc.data().attributes,
+                    "geometry" : {
+                      "rings": rings,
+                      "spatialReference": {
+                                  "wkid": 102100,
+                                  "latestWkid": 3857
+                              }
+                    }
+                  }
+                  features.push(feature)
+            } else {
+                // doc.data() will be undefined in this case
+                console.log("No such document!");
+            }
+        }).catch((error) => {
+            console.log("Error getting document:", error);
+        });
+        return features;
+      }
+
+      async function addToReviewDatabase(paName,polygonName,email,name,type,currentFeatures) {
+        console.log(paName)
+                console.log(currentFeatures.length)
+                if (currentFeatures.length === 1) {
+                  const currentGeomtryNeeded = currentFeatures.map((feature) => {
+                    // converting arrays to json logic
+                    const Newrings = feature.geometry.rings.map((ring) => {
+                      const indiRing = ring.map((vertices) => {
+                          return { i : vertices}
+                      })
+                      return {i : indiRing}
+                    })
+                    return {[paName]: Newrings}
+                  })
+                  await db.collection("PA").doc(paName).collection("reviews").get().then( async(doc) => {
+                  console.log(doc)
+                    if (doc.size > 0) {
+                      //add logic for existing review
+                      console.log("just add reviewer")
+                      const worked = await doc.forEach((eachReview) =>{
+                        console.log(eachReview.id)
+                        if (eachReview.data().active) {
+                            db.collection("PA").doc(paName).collection("reviews").doc(eachReview.id).update({
+                              reviewer: firebase.firestore.FieldValue.arrayUnion({
+                                [email] : {
+                                  name : name,
+                                  plygonName : polygonName,
+                                  newGeometry : "",
+                                  status : "open",
+                                  comments : "",
+                                  additionalProof : "",
+                                  attachments : ""
+                                }
+                              })
+                          })
+                          .then(() => {
+                              console.log("Document successfully updated!");
+                              return true
+                          })
+                          .catch((error) => {
+                              // The document probably doesn't exist.
+                              console.error("Error updating document: ", error);
+                          });
+                        } else {
+                          
+                        }
+
+                      })
+
+                      }else{
+                      console.log("no reviews")
+                      // Set the "capital" field of the city 'DC'
+                      const dataToBeAdded = {
+                          active : true,
+                          type : type,
+                          currentGeometry : 
+                            currentGeomtryNeeded
+                          ,
+                          reviewer : [{
+                            [email] : {
+                              name : name,
+                              plygonName : polygonName,
+                              newGeometry : "",
+                              status : "open",
+                              comments : "",
+                              additionalProof : "",
+                              attachments : ""
+                            }}
+                          ]
+                      }
+                      console.log(dataToBeAdded)
+                      await db.collection("PA").doc(paName).collection("reviews").add(dataToBeAdded)
+                        .then(() => {
+                            console.log("Document successfully updated!");
+                        })
+                        .catch((error) => {
+                            // The document probably doesn't exist.
+                            console.error("Error updating document: ", error);
+                        });
+                      }
+                  }).catch((error) => {
+                      console.log("Error getting document:", error);
+                  });
+
+                 
+                } else {
+                  var i = 1;
+                  const currentGeomtryNeeded = currentFeatures.map((feature) => {
+                    // converting arrays to json logic
+                    var newPaName = paName+"_"+i;
+                    const Newrings = feature.geometry.rings.map((ring) => {
+                      const indiRing = ring.map((vertices) => {
+                          return { i : vertices}
+                      })
+                      return {i : indiRing}
+                    })
+                    i = i + 1;
+                    return {[newPaName]: Newrings}
+                  })
+                  console.log(currentGeomtryNeeded)
+                  await db.collection("PA").doc(paName).collection("reviews").get().then( async(doc) => {
+                    console.log(doc)
+                    if (doc.size > 0) {
+                      //add logic for existing review
+                      console.log("just add reviewer")
+                      const worked = await doc.forEach((eachReview) =>{
+                        console.log(eachReview.id)
+                        if (eachReview.data().active) {
+                            db.collection("PA").doc(paName).collection("reviews").doc(eachReview.id).update({
+                              reviewer: firebase.firestore.FieldValue.arrayUnion({
+                                [email] : {
+                                  name : name,
+                                  plygonName : polygonName,
+                                  newGeometry : "",
+                                  status : "open",
+                                  comments : "",
+                                  additionalProof : "",
+                                  attachments : ""
+                                }
+                              })
+                          })
+                          .then(() => {
+                              console.log(paName+" "+" "+eachReview.id+" "+email);
+                              return true
+                          })
+                          .catch((error) => {
+                              // The document probably doesn't exist.
+                              console.error("Error updating document: ", error);
+                          });
+                        } else {
+                          
+                        }
+
+                      })
+                    }else{
+                      console.log("no reviews")
+                      // Set the "capital" field of the city 'DC'
+                      const dataToBeAdded = {
+                          active : true,
+                          type : type,
+                          currentGeometry : 
+                            currentGeomtryNeeded
+                          ,
+                          reviewer : [{
+                            [email]: {
+                              name : name,
+                              plygonName : polygonName,
+                              newGeometry : "",
+                              status : "open",
+                              comments : "",
+                              additionalProof : "",
+                              attachments : ""
+                            }
+                          }]
+                      }
+                      console.log(dataToBeAdded)
+                      
+                      await db.collection("PA").doc(paName).collection("reviews").add(dataToBeAdded)
+                      .then(() => {
+                          console.log("Document successfully updated!");
+                      })
+                      .catch((error) => {
+                          // The document probably doesn't exist.
+                          console.error("Error updating document: ", error);
+                      });
+                    }
+                  }).catch((error) => {
+                        console.log("Error getting document:", error);
+                  });
+                }
+
+      }
+  </script>
+  
+
+</head>
+
+<body id="page-top">
+
+  <!-- Page Wrapper -->
+  <div id="wrapper">
+
+    <!-- Sidebar -->
+    <ul class="navbar-nav bg-gradient-primary sidebar sidebar-dark accordion" id="accordionSidebar">
+
+      <!-- Sidebar - Brand -->
+      <a class="sidebar-brand d-flex align-items-center justify-content-center" href="index.html">
+        <div class="sidebar-brand-icon">
+          <img src="img/JDI.png" style="height: 45px;
+          width: auto;object-fit: contain;"></img>
+        </div>
+        <div class="sidebar-brand-text mx-3">CoCo - MAP</div>
+      </a>
+
+      <!-- Divider -->
+      <hr class="sidebar-divider my-0">
+
+      <!-- Nav Item - PA -->
+      <li class="nav-item">
+        <a class="nav-link" href="index.html">
+          <i class="fas fa-map-marked-alt"></i>
+          <span>Protected Areas</span></a>
+      </li>
+
+      <!-- Divider -->
+      <hr class="sidebar-divider">
+
+      <!-- Heading -->
+      <div class="sidebar-heading">
+        My Reviews
+      </div>
+
+      <!-- Nav Item - New Review -->
+      <li class="nav-item active">
+        <a class="nav-link" href="newreview.html">
+          <i class="fas fa-search-location"></i>
+          <span>New</span></a>
+      </li>
+      <!-- Nav Item - Open Review -->
+      <li class="nav-item ">
+        <a class="nav-link" href="newreview.html">
+          <i class="far fa-folder-open"></i>
+          <span>Existing</span></a>
+      </li>
+
+      <!-- Divider -->
+      <hr class="sidebar-divider d-none d-md-block">
+
+      <!-- Sidebar Toggler (Sidebar) -->
+      <div class="text-center d-none d-md-inline">
+        <button class="rounded-circle border-0" id="sidebarToggle"></button>
+      </div>
+
+    </ul>
+    <!-- End of Sidebar -->
+
+    <!-- Content Wrapper -->
+    <div id="content-wrapper" class="d-flex flex-column">
+
+      <!-- Main Content -->
+      <div id="content">
+
+        <!-- Topbar -->
+        <nav class="navbar navbar-expand navbar-light bg-white topbar mb-4 static-top shadow">
+
+          <!-- Sidebar Toggle (Topbar) -->
+          <button id="sidebarToggleTop" class="btn btn-link d-md-none rounded-circle mr-3">
+            <i class="fa fa-bars"></i>
+          </button>
+          <div class="sidebar-brand-icon" style="margin-left: 1em;">
+            <i class="fas fa-search-location fa-2x" style="color: #393a3a;"></i>
+          </div>
+          <h5 class="h5" style="margin-bottom: 0px;margin-left: 1em;font-weight: bold;color: #393a3a;">New Review <span id="selectedPA"></span></h5>
+          <select class="form-select ml-4 form-select-sm" aria-label="select PA" id="paSelected">
+            <option disabled selected>Select Protected Area</option>
+            <option value="ellioti">Sub Species : Ellioti</option>
+            <option value="troglodytes">Sub Species : Troglodytes</option>
+            <option value="schweinfurthii">Sub Species : Schweinfurthii</option>
+            <option value="verus">Sub Species : Verus</option>
+          </select>
+
+          <select class="form-select ml-4 form-select-sm d-none" aria-label="select PA" id="reviewType">
+            <option disabled selected>Select Review Type</option>
+            <option value="0">Preview whole PA</option>
+            <option value="1">Review polygons of PA</option>
+          </select>
+          <!-- Topbar Navbar -->
+          <ul class="navbar-nav ml-auto">
+
+
+            <div class="topbar-divider d-none d-sm-block"></div>
+
+            <!-- Nav Item - User Information -->
+            <li class="nav-item dropdown no-arrow">
+              <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                <span class="mr-2 d-none d-lg-inline text-gray-600 small">Valerie Luna</span>
+                <img class="img-profile rounded-circle" src="https://source.unsplash.com/QAB-WJcbgJk/60x60">
+              </a>
+              <!-- Dropdown - User Information -->
+              <div class="dropdown-menu dropdown-menu-right shadow animated--grow-in" aria-labelledby="userDropdown">
+                <a class="dropdown-item" href="#">
+                  <i class="fas fa-user fa-sm fa-fw mr-2 text-gray-400"></i>
+                  Profile
+                </a>
+                <a class="dropdown-item" href="#">
+                  <i class="fas fa-cogs fa-sm fa-fw mr-2 text-gray-400"></i>
+                  Settings
+                </a>
+                <a class="dropdown-item" href="#">
+                  <i class="fas fa-list fa-sm fa-fw mr-2 text-gray-400"></i>
+                  Activity Log
+                </a>
+                <div class="dropdown-divider"></div>
+                <a class="dropdown-item" href="#" data-toggle="modal" data-target="#logoutModal">
+                  <i class="fas fa-sign-out-alt fa-sm fa-fw mr-2 text-gray-400"></i>
+                  Logout
+                </a>
+              </div>
+            </li>
+
+          </ul>
+
+        </nav>
+        <!-- End of Topbar -->
+
+        <!-- Begin Page Content -->
+        <div class="container-fluid">
+          <!-- Content Row -->
+          <div class="row">
+            <div class="col-xl-12 col-lg-12 mb-2">
+            <div id="mainWindow">
+              <div>
+                <div style='padding-left:4px;'>
+                  <p>Download shapefile from <a href='https://bsvensson.github.io/various-tests/shp/drp_county_boundary.zip'>here.</a></p>
+                  <p>Add a zipped shapefile to the map.</p>
+                  <p>Visit the
+                    <a target='_blank' href="https://doc.arcgis.com/en/arcgis-online/reference/shapefiles.htm">Shapefiles</a> help
+                    topic for information and limitations.</p>
+                  <form enctype="multipart/form-data" method="post" id="uploadForm">
+                    <div class="field">
+                      <label class="file-upload">
+                        <span><strong>Add File</strong></span>
+                        <input type="file" name="file" id="inFile" />
+                      </label>
+                    </div>
+                  </form>
+                  <span class="file-upload-status" style="opacity:1;" id="upload-status"></span>
+                  <div id="fileInfo"> </div>
+                </div>
+              </div>
+            </div>
+            <div id="viewDiv" style="height: 70vh;"></div>
+            </div>
+          </div>
+          <div class="row d-none" id="reviewTable">
+            <div class="col-xl-12 col-lg-12">
+          <!-- Review Table -->
+          <div class="table-responsive">
+            <table class="table table-bordered" id="dataTable" width="100%" cellspacing="0">
+              <thead>
+                <tr>
+                  <th>Polygon ID</th>
+                  <th>Polygon Name</th>
+                  <th>Reviewer Email</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tfoot>
+                <tr>
+                  <th>Polygon ID</th>
+                  <th>Polygon Name</th>
+                  <th>Reviewer Email</th>
+                  <th>Action</th>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+            </div>
+          </div>
+        </div>
+        <!-- /.container-fluid -->
+
+      </div>
+      <!-- End of Main Content -->
+
+      <!-- Footer -->
+      <footer class="sticky-footer bg-white">
+        <div class="container my-auto">
+          <div class="copyright text-center my-auto">
+            <span>Copyright &copy; NextGen Tracker 2020</span>
+          </div>
+        </div>
+      </footer>
+      <!-- End of Footer -->
+
+    </div>
+    <!-- End of Content Wrapper -->
+
+  </div>
+  <!-- End of Page Wrapper -->
+
+  <!-- Scroll to Top Button-->
+  <a class="scroll-to-top rounded" href="#page-top">
+    <i class="fas fa-angle-up"></i>
+  </a>
+
+  <!-- Logout Modal-->
+  <div class="modal fade" id="logoutModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="exampleModalLabel">Ready to Leave?</h5>
+          <button class="close" type="button" data-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">×</span>
+          </button>
+        </div>
+        <div class="modal-body">Select "Logout" below if you are ready to end your current session.</div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" type="button" data-dismiss="modal">Cancel</button>
+          <a class="btn btn-primary" href="login.html">Logout</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom scripts for all pages-->
+  <script src="js/sb-admin-2.min.js"></script>
+
+    <!-- Page level plugins -->
+    <script src="vendor/datatables/jquery.dataTables.min.js"></script>
+    <script src="vendor/datatables/dataTables.bootstrap4.min.js"></script>
+    <script src="https://cdn.datatables.net/select/1.3.3/js/dataTables.select.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/1.7.1/js/dataTables.buttons.min.js"></script>
+  
+    <!-- Page level custom scripts -->
+    <script src="js/demo/datatables-demo.js"></script>
+
+  <!-- Custom scripts to load PA Maps-->
+  <script src="https://js.arcgis.com/4.20/"></script>
+
+  <script>
+    require([
+      "esri/config",
+      "esri/Map",
+      "esri/views/MapView",
+      "esri/widgets/Expand",
+      "esri/request",
+      "esri/layers/FeatureLayer",
+      "esri/layers/support/Field",
+      "esri/Graphic"
+    ], (esriConfig, Map, MapView, Expand, request, FeatureLayer, Field, Graphic) => {
+
+      esriConfig.apiKey = "AAPKe8cabcd38b844220983a795517ebcc46yoGwvKNyA6lfjjdaJIhbMcN1AB0AoWgbpyhCzlX5P3e5oX4Fv9KDF_WEPRHkRz4w";
+
+        const portalUrl = "https://www.arcgis.com";
+        console.log("reached here")
+        document.getElementById("uploadForm").addEventListener("change", (event) => {
+          const fileName = event.target.value.toLowerCase();
+
+          if (fileName.indexOf(".zip") !== -1) {//is file a zip - if not notify user
+            generateFeatureCollection(fileName);
+          }
+          else {
+            document.getElementById('upload-status').innerHTML = '<p style="color:red">Add shapefile as .zip file</p>';
+          }
+        });
+
+        const map = new Map({
+          basemap: "dark-gray-vector"
+        });
+
+        const view = new MapView({
+          center: [-41.647, 36.41],
+          zoom: 2,
+          map: map,
+          container: "viewDiv",
+          popup: {
+            defaultPopupTemplateEnabled: true
+          }
+        });
+
+        const fileForm = document.getElementById("mainWindow");
+
+        const expand = new Expand({
+          expandIconClass: "esri-icon-upload",
+          view: view,
+          content: fileForm
+        });
+
+        view.ui.add(expand, "top-right");
+        $( document ).ready(async function() {
+            const paAllData = await getAllPAData();
+            addDBPADataToMap(paAllData)
+        });
+        console.log(layerIGOt)
+        $( "#paSelected" ).change(async function() {
+          console.log(this.value)
+          const paSelectedData = await getSelectedPAData(this.value)
+          addDBPADataToMap(paSelectedData)
+          //addShapefileToMapSpecificLayer(paSelectedData)
+          reviewTable.clear()
+          $( "#reviewType" ).addClass("d-inline") ;
+          $("#reviewType").val(0).change();
+        });
+
+        const reviewTable = $('#dataTable').DataTable( {
+          columnDefs: [ {
+            orderable: false,
+            className: 'select-checkbox',
+            targets:   0
+        } ,{
+            targets: -2,
+            data: null,
+            defaultContent: '<input type="email" class="form-control" aria-describedby="emailHelp" id="reviewerEmail" placeholder="Enter email">'
+        }, {
+            targets: -1,
+            data: null,
+            defaultContent: '<button type="button" class="btn btn-info">Send</button>'
+        }  ],
+        select: {
+              style:    'os',
+              selector: 'td:first-child'
+          },
+          dom: 'Bfrtip',
+          buttons: [
+              {
+                  text: 'Add Reviewer',
+                  action: function ( e, dt, node, config ) {
+                      reviewTable.row.add(dt.row( { selected: true } ).data()).draw();
+                  },
+                  enabled: false
+              }
+          ]
+        } );
+        
+        $('#dataTable tbody').on( 'click', 'button', function () {
+            var data = reviewTable.row( $(this).parents('tr') ).data();
+            //console.log($(this).parents('tr').find("#reviewerEmail").val())
+            addToReviewTable(data[0],data[1],$(this).parents('tr').find("#reviewerEmail").val())
+            alert( data[0] +"'s email is: "+ $(this).parents('tr').find("#reviewerEmail").val() );
+        } );
+
+        function addToReviewTable(fid,plygonName,email) {
+          console.log(fid,plygonName,email)
+          view.map.allLayers.forEach((layer) => {
+              if (layer.geometryType === 'polygon') {
+                console.log(layer.geometryType)
+                layer.queryFeatures().then(function(results){
+                  // prints the array of result graphics to the console
+                  
+                  if (Number($("#reviewType").val()) === 0) {
+                    results.features.map((feature) => {
+                      if (feature.attributes.SUBSPECIES === plygonName) {
+                        
+
+                        //add reviewer email to datbase and send him and email
+                        addToReviewDatabase(plygonName,plygonName,email,"","wholePA",results.features)
+                      }
+                    });
+                  } else {
+                    results.features.map((feature) => {
+                      if (Number(feature.attributes.FID) === Number(fid)) {
+                        
+                        addToReviewDatabase(feature.attributes.SUBSPECIES,plygonName,email,"","PartsOfPA",results.features)
+                      }
+                    });
+                  }
+
+                });
+              }
+            });
+            
+
+        }
+
+        reviewTable.on( 'select', function () {
+          reviewTable.button( 0 ).enable( true );
+        } ).on( 'deselect', function () {
+          reviewTable.button( 0 ).enable( false );
+        } );
+
+        $( "#reviewType" ).change( async function() {
+          console.log(this.value);
+          $( "#reviewTable" ).addClass("d-inline") ;
+
+          if (this.value === "0") {
+            console.log("Adding review table")
+            //Not dividing the map, adding to the review table
+            reviewTable.clear()
+            const paSelectedData = await getSelectedPAData($( "#paSelected" ).val())
+            await addDBPADataToMap (paSelectedData);
+            reviewTable.row.add( [ 1, $("#paSelected").val() ] ).draw()
+          } else {
+            const paSelectedData = await getSelectedPAData($( "#paSelected" ).val())
+            const ploygons = await addShapefileToMapDividePolygons (paSelectedData);
+            reviewTable.clear()
+            ploygons.forEach(element => { 
+              reviewTable.row.add( [ element.attributes.ASSESSMENT , element.attributes.SUBSPECIES+"_"+element.attributes.ASSESSMENT ] ).draw()
+            });
+          }
+
+        });
+        
+
+        function generateFeatureCollection (fileName) {
+          let name = fileName.split(".");
+          // Chrome adds c:\fakepath to the value - we need to remove it
+          name = name[0].replace("c:\\fakepath\\", "");
+
+          document.getElementById('upload-status').innerHTML = '<b>Loading </b>' + name;
+
+          // define the input params for generate see the rest doc for details
+          // https://developers.arcgis.com/rest/users-groups-and-items/generate.htm
+          const params = {
+            'name': window.location.origin+"/js/redlist_species_data_shared1.zip",
+            'targetSR': view.spatialReference,
+            'maxRecordCount': 1000,
+            'enforceInputFileSizeLimit': true,
+            'enforceOutputJsonSizeLimit': true
+          };
+
+          // generalize features to 10 meters for better performance
+          params.generalize = true;
+          params.maxAllowableOffset = 10;
+          params.reducePrecision = true;
+          params.numberOfDigitsAfterDecimal = 0;
+
+          const myContent = {
+            'filetype': 'shapefile',
+            'publishParameters': JSON.stringify(params),
+            'f': 'json',
+          };
+          console.log(document.getElementById('uploadForm'))
+          // use the REST generate operation to generate a feature collection from the zipped shapefile
+          request(portalUrl + '/sharing/rest/content/features/generate', {
+            query: myContent,
+            body: document.getElementById('uploadForm'),
+            responseType: 'json'
+          })
+          .then((response) => {
+              const layerName = response.data.featureCollection.layers[0].layerDefinition.name;
+              document.getElementById('upload-status').innerHTML = '<b>Loaded: </b>' + layerName;
+              addShapefileToMap(response.data.featureCollection);
+              console.log(response.data.featureCollection)
+            })
+            .catch(errorHandler);
+        }
+
+        function errorHandler (error) {
+          console.log(error)
+          document.getElementById('upload-status').innerHTML =
+          "<p style='color:red;max-width: 500px;'>" + error.message + "</p>";
+        }
+
+        function addShapefileToMap (featureCollection) {
+          // add the shapefile to the map and zoom to the feature collection extent
+          // if you want to persist the feature collection when you reload browser, you could store the
+          // collection in local storage by serializing the layer using featureLayer.toJson()
+          // see the 'Feature Collection in Local Storage' sample for an example of how to work with local storage
+          let sourceGraphics = [];
+          
+          const layers = featureCollection.layers.map((layer) => {
+            console.log(layer.featureSet.features[2])
+            const graphics = layer.featureSet.features.map((feature) => {
+
+              return Graphic.fromJSON(feature);
+            })
+
+            console.log(graphics)
+            sourceGraphics = sourceGraphics.concat(graphics);
+            console.log(sourceGraphics)
+            const featureLayer = new FeatureLayer({
+              objectIdField: "FID",
+              source: graphics,
+              fields: layer.layerDefinition.fields.map((field) => {
+              return Field.fromJSON(field);
+              })
+            });
+            return featureLayer;
+            // associate the feature with the popup on click to enable highlight and zoom to
+          });
+          
+          map.addMany(layers);
+          console.log(layers)
+          console.log(map)
+          view.goTo(sourceGraphics)
+          .catch((error) => {
+            if (error.name != "AbortError"){
+              console.error(error);
+            }
+          });
+
+          document.getElementById('upload-status').innerHTML = "";
+        }
+
+        function addDBPADataToMap (featureCollection) {
+          // add the shapefile to the map and zoom to the feature collection extent
+          // if you want to persist the feature collection when you reload browser, you could store the
+          // collection in local storage by serializing the layer using featureLayer.toJson()
+          // see the 'Feature Collection in Local Storage' sample for an example of how to work with local storage
+          let sourceGraphics = [];
+            //console.log(featureCollection)
+            featureCollection.forEach(element => {
+              //console.log(element)
+            });
+            const graphics = featureCollection.map((feature) => {
+              //console.log(feature)
+              return Graphic.fromJSON(feature);
+            })
+
+            //console.log(graphics)
+            sourceGraphics = sourceGraphics.concat(graphics);
+            console.log(sourceGraphics)
+            const featureLayer = new FeatureLayer({
+              objectIdField: "FID",
+              source: graphics,
+              fields: [{
+                  name: "FID",
+                  type: "oid"
+                },{
+                  name: "ASSESSMENT",
+                  type: "double"
+                },{
+                  name: "SUBSPECIES",
+                  type: "string"
+                }
+                ],
+            });
+          map.removeAll();
+          map.add(featureLayer);
+          view.goTo(sourceGraphics)
+          .catch((error) => {
+            if (error.name != "AbortError"){
+              console.error(error);
+            }
+          });
+
+          document.getElementById('upload-status').innerHTML = "";
+        }
+
+        function addShapefileToMapSpecificLayer (featureCollection, FID) {
+          // add the shapefile to the map and zoom to the feature collection extent
+          // if you want to persist the feature collection when you reload browser, you could store the
+          // collection in local storage by serializing the layer using featureLayer.toJson()
+          // see the 'Feature Collection in Local Storage' sample for an example of how to work with local storage
+          let sourceGraphics = [];
+          
+          const layers = featureCollection.layers.map((layer) => {
+            console.log(layer.featureSet.features[2])
+            const graphics = layer.featureSet.features.map((feature) => {
+
+              return Graphic.fromJSON(feature);
+            }).filter((feature, i , NewFeature) =>{
+                console.log(feature.attributes.FID === Number(FID))
+                return feature.attributes.FID === Number(FID);
+              })
+
+            console.log(graphics)
+            sourceGraphics = sourceGraphics.concat(graphics);
+            console.log(sourceGraphics)
+            const featureLayer = new FeatureLayer({
+              objectIdField: "FID",
+              source: graphics,
+              fields: layer.layerDefinition.fields.map((field) => {
+              return Field.fromJSON(field);
+              })
+            });
+            return featureLayer;
+            // associate the feature with the popup on click to enable highlight and zoom to
+          });
+          map.removeAll();
+          map.addMany(layers);
+          view.goTo(sourceGraphics)
+          .catch((error) => {
+            if (error.name != "AbortError"){
+              console.error(error);
+            }
+          });
+
+          document.getElementById('upload-status').innerHTML = "";
+        }
+
+
+        function addShapefileToMapDividePolygons (featureCollection) {
+            // add the shapefile to the map and zoom to the feature collection extent
+            // if you want to persist the feature collection when you reload browser, you could store the
+            // collection in local storage by serializing the layer using featureLayer.toJson()
+            // see the 'Feature Collection in Local Storage' sample for an example of how to work with local storage
+            let sourceGraphics = [];
+
+              var i = 0;
+                  const rings = featureCollection[0].geometry.rings.map((ring) => {
+                    //console.log(layer.featureSet.features[2].attributes)
+                    function polygonArea(vertices) { 
+                        var area = 0;
+                        for (var i = 0; i < vertices.length; i++) {
+                            j = (i + 1) % vertices.length;
+                            area += vertices[i][0] * vertices[j][1];
+                            area -= vertices[j][0] * vertices[i][1];
+                        }
+                        return area / 2;
+                    }
+                    var clockwise = polygonArea(ring) > 0;
+                    console.log(clockwise +" "+ Number(1 + i))
+                    return [ring, clockwise]
+
+                  })
+              var NewRings = [];
+              for (let index = 0; index < rings.length; index++) {
+                if (rings[index][1] === false) {
+                  NewRings.push(rings[index][0])
+                } else {
+                  NewRings.push([rings[index-1][0],rings[index][0]])
+                  NewRings.splice(index-1, 1)
+                }
+                
+              }
+              i = 0;
+              const ringGraphics = NewRings.map((ring) => {
+                const newGraphic = new Graphic ({
+                attributes : {
+                    "FID": 1 + i,
+                    "ASSESSMENT": 1 + i,
+                    "ID_NO": NewRings.length,
+                    "BINOMIAL": "Pan troglodytes",
+                    "PRESENCE": 1,
+                    "ORIGIN": 1,
+                    "SEASONAL": 1,
+                    "COMPILER": "Lilian Pintea, Jane Goodall Institute, IUCN SSC A.P.E.S. Database",
+                    "YEAR": 2018,
+                    "CITATION": "IUCN (International Union for Conservation of Nature)",
+                    "LEGEND": "Extant (resident)",
+                    "SUBSPECIES": featureCollection[0].attributes.SUBSPECIES,
+                    "SUBPOP": " ",
+                    "DIST_COMM": " ",
+                    "ISLAND": " ",
+                    "TAX_COMM": " "
+                },
+                geometry : {
+                  type : "polygon",
+                  rings : ring,
+                  spatialReference : {
+                    latestWkid : featureCollection[0].geometry.spatialReference.latestWkid,
+                    wkid : featureCollection[0].geometry.spatialReference.wkid
+                  }
+                },symbol : {
+                  type: "text",  // autocasts as new TextSymbol()
+                  color: "black",
+                  haloColor: "white",
+                  haloSize: "1px",
+                  text: i,
+                  xoffset: 0,
+                  yoffset: 0,
+                  font: {  // autocasts as new Font()
+                    size: 12,
+                    family: "Josefin Slab",
+                    weight: "bold"
+                  }
+                },
+              });
+              console.log(newGraphic)
+              i = i + 1;
+              return newGraphic;
+              })
+
+              console.log(ringGraphics)
+              sourceGraphics = sourceGraphics.concat(ringGraphics);
+              console.log(sourceGraphics)
+
+              const defaultSym = {
+                type: "simple-fill", // autocasts as new SimpleFillSymbol()
+                outline: {
+                  // autocasts as new SimpleLineSymbol()
+                  color: 'white',
+                  width: "0.7px"
+                }
+              }
+              const renderer = {
+                  type: "simple", // autocasts as new SimpleRenderer()
+                  symbol: defaultSym,
+                  label: "Part of PA",
+                  visualVariables: [
+                    {
+                      type: "color",
+                      field: "ASSESSMENT",
+                      normalizationField: "ID_NO",
+                      stops: [
+                        {
+                          value: 0,
+                          color: "#FF0000"
+                        },
+                        {
+                          value: 1,
+                          color: "#27cf38"
+                        }
+                      ]
+                    }
+                  ]
+                };
+                const labelClass = {  // autocasts as new LabelClass()
+                  symbol: {
+                    type: "text",  // autocasts as new TextSymbol()
+                    color: "black",
+                    haloColor: "white",
+                    haloSize: 1,
+                    font: {  // autocast as new Font()
+                      family: "Ubuntu Mono",
+                      size: 14,
+                      weight: "bold"
+                    }
+                  },
+                  labelPlacement: "always-horizontal",
+                  labelExpressionInfo: {
+                    expression: "$feature.FID"
+                  },
+                  maxScale: 0,
+                  minScale: 25000000
+                };
+
+
+              const featureLayer = new FeatureLayer({
+                objectIdField: "FID",
+                source: ringGraphics,
+                fields: [{
+                  name: "FID",
+                  type: "oid"
+                },{
+                  name: "ASSESSMENT",
+                  type: "double"
+                },{
+                  name: "ID_NO",
+                  type: "double"
+                },{
+                  name: "SUBSPECIES",
+                  type: "string"
+                }
+                ],
+                renderer : renderer,
+                labelingInfo: [labelClass]
+                
+              });
+
+            map.removeAll();
+            map.add(featureLayer);
+            view.goTo(sourceGraphics)
+            .catch((error) => {
+              if (error.name != "AbortError"){
+                console.error(error);
+              }
+            });
+
+            document.getElementById('upload-status').innerHTML = "";
+            return sourceGraphics
+          }
+
+      });
+
+  </script>
+
+
+
+</body>
+
+</html>

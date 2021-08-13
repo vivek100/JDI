@@ -1,0 +1,529 @@
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+  <title>Edit features with the Editor widget | Sample | ArcGIS API for JavaScript 4.20</title>
+
+  <link rel="stylesheet" href="https://js.arcgis.com/4.20/esri/themes/light/main.css" />
+  <!-- Bootstrap core JavaScript-->
+  <script src="vendor/jquery/jquery.min.js"></script>
+  <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+
+  <!-- Core plugin JavaScript-->
+  <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
+
+  <style>
+    html,
+    body,
+    #viewDiv {
+      padding: 0;
+      margin: 0;
+      height: 100%;
+      width: 100%;
+    }
+
+    .esri-editor .esri-item-list__scroller {
+      max-height: 350px;
+    }
+  </style>
+<script src="https://www.gstatic.com/firebasejs/8.9.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.9.1/firebase-firestore.js"></script>
+<script>
+
+         // const firebase = require("firebase");
+          // Required for side-effects
+          //require("firebase/firestore");
+                    // Your web app's Firebase configuration
+      // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+      var firebaseConfig = {
+          apiKey: "AIzaSyB8RV5Hg46JtsXQxQxTdy3QV6s6wcobCgY",
+          authDomain: "jdi-gdh.firebaseapp.com",
+          projectId: "jdi-gdh",
+          storageBucket: "jdi-gdh.appspot.com",
+          messagingSenderId: "256074571859",
+          appId: "1:256074571859:web:52a2bdc3b1e1d22a1e26a6",
+          measurementId: "G-77EV8L3R99"
+      };
+      // Initialize Firebase
+      firebase.initializeApp(firebaseConfig);
+
+      var db = firebase.firestore();
+     async function getSelectedReviewData(paname,docid,email) {
+        var editMapData = []
+        await db.collection("PA").doc(paname).collection("reviews").doc(docid).get().then((doc) => {
+            if (doc.exists) {
+              console.log(doc.data())
+
+              if (doc.data().active) {
+                doc.data().reviewer.map((ireviewer) => {
+                  if (ireviewer[email]) {
+                    if (ireviewer[email].status === "open") {
+                      editMapData = doc.data().currentGeometry.map((indiMap) => {
+                        if (indiMap[ireviewer[email].plygonName]) {
+                          console.log(indiMap[ireviewer[email].plygonName])
+                          return indiMap[ireviewer[email].plygonName]
+                        }
+                      })
+                    }
+
+                  }
+                })
+              }
+              
+
+            } else {
+                // doc.data() will be undefined in this case
+                console.log("No such document!");
+            }
+        }).catch((error) => {
+            console.log("Error getting document:", error);
+        });
+        return editMapData;
+      }
+
+      async function updateReviewData(paname,docid,email,updatedFeature) {
+        var status = false;
+        console.log(paname + " " + docid + " "+email+" ")
+        
+        await db.collection("PA").doc(paname).collection("reviews").doc(docid).get().then((doc) => {
+            if (doc.exists) {
+              if (doc.data().active) {
+                doc.data().reviewer.map(async (ireviewer) => {
+
+
+                  if (ireviewer[email]) {
+                      const updateGeometry = await updatedFeature.map((feature) => {
+                        // converting arrays to json logic
+                        const Newrings = feature.geometry.rings.map((ring) => {
+                          const indiRing = ring.map((vertices) => {
+                              return { i : vertices}
+                          })
+                          return {i : indiRing}
+                        })
+                        var plygonName = ireviewer[email].plygonName
+                        return {[plygonName]: Newrings}
+                      })
+                      console.log(updateGeometry)
+                  
+                      
+                    //delete array
+                    var batch = db.batch();
+
+                    batch.update(db.collection("PA").doc(paname).collection("reviews").doc(docid),{
+                              reviewer: firebase.firestore.FieldValue.arrayUnion({
+                                [email] : {
+                                  name : ireviewer[email].name,
+                                  plygonName : ireviewer[email].plygonName,
+                                  newGeometry : updateGeometry,
+                                  status : "changed",
+                                  comments : updatedFeature[0].attributes.descrip,
+                                  additionalProof : updatedFeature[0].attributes.moreCom,
+                                  attachments : ""
+                                }
+                              })
+                          })
+
+                    batch.update(db.collection("PA").doc(paname).collection("reviews").doc(docid),{
+                              reviewer: firebase.firestore.FieldValue.arrayRemove(ireviewer)
+                          })
+                    
+                    await batch.commit()
+                    .then(async () => {console.log('Success!')
+                    const sendBody = {
+                      ccname : "JDI",
+                      ccemail : "shukla.vivek1993@gmail.com",
+                      name : "Your Name",
+                      email : email,
+                      uid : email
+                    }
+                    console.log(sendBody)
+                    try {
+                      const res = await fetch('/api/v1/embedd1', {
+                        method: 'POST',
+                        mode: 'cors',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*',
+                          'Access-Control-Allow-Headers': 'Content-Type'
+                        },
+                        body: JSON.stringify(sendBody)
+                      });
+                  
+                      if (res.status === 400) {
+                        showError('Database error. Please try again!');
+                        return;
+                      }
+                      if (res.status === 500) {
+                        showError('Server Error!');
+                        return;
+                      }
+                      if (res.status === 201) {
+                        var datar = await res.json();
+                        
+                          console.log( datar);
+                          window.location.assign(datar.url)
+                          return;
+
+                        
+                        return;
+                      }
+                      
+                    } catch (err) {
+                      $('#loader').hide();
+                      console.log(res)
+                      showError(err);
+                      return;
+                    }
+                            status = true;
+                    })
+                    .catch(err => console.error('Failed!', err));
+
+
+
+                  }
+                })
+              }
+              
+
+            } else {
+                // doc.data() will be undefined in this case
+                console.log("No such document!");
+            }
+        }).catch((error) => {
+            console.log("Error getting document:", error);
+        });
+        return status;
+      }
+
+
+</script>
+  
+
+
+</head>
+
+<body>
+  <div id="viewDiv"></div>
+  <div id="editorDiv"></div>
+</body>
+
+<script src="https://js.arcgis.com/4.20/"></script>
+<script>
+  require([
+    "esri/config",
+    "esri/WebMap",
+    "esri/Map",
+    "esri/views/MapView",
+    "esri/widgets/Expand",
+    "esri/request",
+    "esri/symbols/Symbol",
+    "esri/layers/FeatureLayer",
+    "esri/layers/support/Field",
+    "esri/Graphic",
+    "esri/layers/GraphicsLayer",
+    "esri/widgets/Editor"
+  ], (esriConfig, WebMap, Map, MapView, Expand, request, Symbol, FeatureLayer, Field, Graphic, GraphicsLayer,Editor ) => {
+
+      let pointLayer, lineLayer, polygonLayer;
+
+        // add the shapefile to the map and zoom to the feature collection extent
+        // if you want to persist the feature collection when you reload browser, you could store the
+        // collection in local storage by serializing the layer using featureLayer.toJson()
+        // see the 'Feature Collection in Local Storage' sample for an example of how to work with local storage
+
+        async function haha() {
+          
+        const sendBody = {
+                      ccname : "JDI",
+                      ccemail : "shukla.vivek1993@gmail.com",
+                      name : "Your Name",
+                      email : "shukla.vivek1993@gmail.com",
+                      uid : "shukla.vivek1993@gmail.com"
+                    }
+                    console.log(sendBody)
+                    try {
+                      const res = await fetch('/api/v1/embedd1', {
+                        method: 'POST',
+                        mode: 'cors',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*',
+                          'Access-Control-Allow-Headers': 'Content-Type'
+                        },
+                        body: JSON.stringify(sendBody)
+                      });
+                  
+                      if (res.status === 400) {
+                        showError('Database error. Please try again!');
+                        return;
+                      }
+                      if (res.status === 500) {
+                        showError('Server Error!');
+                        return;
+                      }
+                      if (res.status === 201) {
+                        var datar = await res.json();
+                        
+                          console.log( datar);
+                          window.location.assign(datar.url)
+                          return;
+
+                        
+                        return;
+                      }
+                      
+                    } catch (err) {
+                      console.log(res)
+                      return;
+                    }
+        
+                  }
+            //haha()
+
+
+
+
+
+
+
+
+
+
+
+              const webmap = new WebMap({
+                portalItem: {
+                  id: "154ba34201774bb29f7c3b68adf52b6a"
+                }
+              });
+              var view = new MapView({
+                container: "viewDiv",
+                map: webmap
+              });
+              
+
+              function addToMap(featureLayer,feature) {
+                webmap.add(featureLayer)
+                  // This function will fire each time applyEdits() is completed successfully
+                featureLayer.on("edits", function(event) {
+
+                    const extractObjectId = function(result) {
+                      return result.objectId;
+                    };
+                    featureLayer.queryFeatures().then(function(results){
+                      // prints the array of result graphics to the console
+                      console.log(results.features);
+
+                      var uricomp = window.location.search.substring(1).replace( /\+/g, ' ' ).split('=');
+                      var tabs = uricomp.join("=")
+                      var data1 = tabs.split("&")
+                      console.log(data1)
+                      var data = data1.map((element) =>{
+                        return element.split("=")
+                      })
+
+                      updateReviewData(data[0][1],data[1][1],data[2][1],results.features)
+
+
+                    });
+                    console.log(featureLayer)
+
+                    const adds = event.addedFeatures.map(extractObjectId);
+                    console.log("addedFeatures: ", adds.length, adds);
+
+                    const updates = event.updatedFeatures.map(extractObjectId);
+                    console.log("updatedFeatures: ", updates.length, updates);
+
+                    const deletes = event.deletedFeatures.map(extractObjectId);
+                    console.log("deletedFeatures: ", deletes.length, deletes);
+                });
+
+                view.goTo(feature)
+                .catch((error) => {
+                  if (error.name != "AbortError"){
+                    console.error(error);
+                  }
+                });
+                
+
+
+              }
+
+
+
+              view.when(() => {
+                view.map.loadAll().then(() => {
+                  console.log(view.map.allLayers)
+                  view.map.allLayers.forEach((layer) => {
+                    if (layer.type === 'feature') {
+                      switch (layer.geometryType) {
+                        case "polygon":
+                          //layer.add(feature)
+                          polygonLayer = layer;
+                          break;
+                        case "polyline":
+                          
+                          break;
+                        case "point":
+                          webmap.remove(layer)
+                          break;
+                      }
+                    }
+                  });
+                  
+                  // Create layerInfos for layers in Editor. This
+                  // sets the fields for editing.
+
+                  const pointInfos = {
+                    layer: pointLayer,
+                    fieldConfig: [{
+                      name: "HazardType",
+                      label: "Hazard type"
+                    }, {
+                      name: "Description",
+                      label: "Description"
+                    }, {
+                      name: "SpecialInstructions",
+                      label: "Special Instructions"
+                    }, {
+                      name: "Status",
+                      label: "Status"
+                    }, {
+                      name: "Priority",
+                      label: "Priority"
+                    }]
+                  };
+
+                  const lineInfos = {
+                    layer: lineLayer,
+                    fieldConfig: [{
+                      name: "Severity",
+                      label: "Severity"
+                    }, {
+                      name: "blocktype",
+                      label: "Type of blockage"
+                    }, {
+                      name: "fullclose",
+                      label: "Full closure"
+                    }, {
+                      name: "active",
+                      label: "Active"
+                    }, {
+                      name: "locdesc",
+                      label: "Location Description"
+                    }]
+                  };
+
+                  const polyInfos = {
+                    layer: polygonLayer,
+                    fieldConfig: [{
+                      name: "descrip",
+                      label: "Edit Comments"
+                    },{
+                      name: "moreCom",
+                      label: "Extra Comments"
+                    }]
+                  };
+
+                  const editor = new Editor({
+                    view: view,
+                    layerInfos: [
+                      {
+                        layer: polygonLayer,
+                        fieldConfig: [polyInfos]
+                      }
+                    ],
+                    // Set the snapping options for the Editor. By default, snapping is enabled. This can be toggled on/off using the CTRL key.
+                    snappingOptions: {
+                      enabled: true,
+                      selfEnabled: true,
+                      featureEnabled: true,
+                      featureSources: [{
+                        layer: polygonLayer
+                      }]
+                    }
+
+                  });
+                  // Add widget to top-right of the view
+                  view.ui.add(editor, "top-right");
+
+                });
+
+              }); 
+
+
+              $(async function () {
+                  console.log(window.location.search.substring(1))
+                    if (window.location.search.substring(1).split('=')[0] === "pa") {
+
+                      var uricomp = window.location.search.substring(1).replace( /\+/g, ' ' ).split('=');
+                      var tabs = uricomp.join("=")
+                      var data1 = tabs.split("&")
+                      console.log(data1)
+                      var data = data1.map((element) =>{
+                        return element.split("=")
+                      })
+                      console.log(data)
+                      const mapData = await getSelectedReviewData(data[0][1],data[1][1],data[2][1])
+                      console.log(mapData)
+
+                      const rings = await mapData[0].map((ring) => {
+                            var indRing = []
+                            ring.i.map((vertices) => {
+                              indRing.push(vertices.i)
+                            })
+                            return indRing
+                          })
+                      const feature = new Graphic ({
+                            "attributes" : {
+                              "FID": 1,
+                              "mapName": data[0][1],
+                              "descrip": "",
+                              "moreCom": ""
+                            },
+                            "geometry" : {
+                              "type" : "polygon",
+                              "rings": rings,
+                              "spatialReference": {
+                                          "wkid": 102100,
+                                          "latestWkid": 3857
+                                      }
+                            }
+                          })
+
+                      const featureLayer = new FeatureLayer({
+                        objectIdField: "FID",
+                        source: [feature],
+                        fields: [{
+                          name: "FID",
+                          type: "oid"
+                        },{
+                          name: "descrip",
+                          alias: "Edit Comments",
+                          type: "string"
+                        },{
+                          name: "moreCom",
+                          alias: "Extra Comments",
+                          type: "string"
+                        }
+                        ]
+                        
+                      });
+
+                      console.log(feature)
+
+                      addToMap(featureLayer,feature)
+
+
+
+
+                    } 
+              
+                  });
+
+            
+
+
+});
+</script>
+</html>
